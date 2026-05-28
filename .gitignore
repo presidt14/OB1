@@ -1,7 +1,9 @@
 node_modules/
 .DS_Store
 .planning/
-supabase/
+# supabase/      <-- commented out: we want to track our Edge Functions
+supabase/.temp/
+supabase/.branches/
 
 # Maintainer-local overlays (not part of upstream contribution contract)
 .local/
