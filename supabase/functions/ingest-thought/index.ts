@@ -1,79 +1,123 @@
+// ============================================================
+// Open Brain — ingest-thought/index.ts
+// Supabase Edge Function: Slack → embed → classify → store → reply
+// Deploy: supabase functions deploy ingest-thought --no-verify-jwt
+// ============================================================
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
-const SLACK_BOT_TOKEN = Deno.env.get("SLACK_BOT_TOKEN")!;
-const SLACK_CAPTURE_CHANNEL = Deno.env.get("SLACK_CAPTURE_CHANNEL")!;
+const OPENROUTER_API_KEY        = Deno.env.get("OPENROUTER_API_KEY")!;
+const SLACK_BOT_TOKEN           = Deno.env.get("SLACK_BOT_TOKEN")!;
+const SLACK_CAPTURE_CHANNEL     = Deno.env.get("SLACK_CAPTURE_CHANNEL")!;
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// ── Generate 1536-dim embedding via OpenRouter ──────────────────────
 async function getEmbedding(text: string): Promise<number[]> {
   const r = await fetch(`${OPENROUTER_BASE}/embeddings`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "openai/text-embedding-3-small", input: text }),
+    headers: {
+      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "openai/text-embedding-3-small",
+      input: text,
+    }),
   });
   const d = await r.json();
   return d.data[0].embedding;
 }
 
+// ── Extract structured metadata via gpt-4o-mini ────────────────────
 async function extractMetadata(text: string): Promise<Record<string, unknown>> {
   const r = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       model: "openai/gpt-4o-mini",
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: `Extract metadata from the user's captured thought. Return JSON with:
+        {
+          role: "system",
+          content: `Extract metadata from the user's captured thought. Return JSON with:
 - "people": array of people mentioned (empty if none)
 - "action_items": array of implied to-dos (empty if none)
 - "dates_mentioned": array of dates YYYY-MM-DD (empty if none)
 - "topics": array of 1-3 short topic tags (always at least one)
 - "type": one of "observation", "task", "idea", "reference", "person_note"
-Only extract what's explicitly there.` },
+Only extract what's explicitly there.`,
+        },
         { role: "user", content: text },
       ],
     }),
   });
   const d = await r.json();
-  try { return JSON.parse(d.choices[0].message.content); }
-  catch { return { topics: ["uncategorized"], type: "observation" }; }
+  try {
+    return JSON.parse(d.choices[0].message.content);
+  } catch {
+    return { topics: ["uncategorized"], type: "observation" };
+  }
 }
 
+// ── Post threaded reply to Slack ────────────────────────────────────
 async function replyInSlack(channel: string, threadTs: string, text: string): Promise<void> {
   await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${SLACK_BOT_TOKEN}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ channel, thread_ts: threadTs, text }),
   });
 }
 
+// ── Main handler ────────────────────────────────────────────────────
 Deno.serve(async (req: Request): Promise<Response> => {
   try {
     const body = await req.json();
+
+    // Slack URL verification handshake
     if (body.type === "url_verification") {
       return new Response(JSON.stringify({ challenge: body.challenge }), {
         headers: { "Content-Type": "application/json" },
       });
     }
+
     const event = body.event;
-    if (!event || event.type !== "message" || event.subtype || event.bot_id
-        || event.channel !== SLACK_CAPTURE_CHANNEL) {
+
+    // Ignore non-message events, bot messages, and messages outside capture channel
+    if (
+      !event ||
+      event.type !== "message" ||
+      event.subtype ||
+      event.bot_id ||
+      event.channel !== SLACK_CAPTURE_CHANNEL
+    ) {
       return new Response("ok", { status: 200 });
     }
+
     const messageText: string = event.text;
     const channel: string = event.channel;
     const messageTs: string = event.ts;
-    if (!messageText || messageText.trim() === "") return new Response("ok", { status: 200 });
 
+    if (!messageText || messageText.trim() === "") {
+      return new Response("ok", { status: 200 });
+    }
+
+    // Generate embedding + extract metadata in parallel for speed
     const [embedding, metadata] = await Promise.all([
       getEmbedding(messageText),
       extractMetadata(messageText),
     ]);
 
+    // Persist to Supabase
     const { error } = await supabase.from("thoughts").insert({
       content: messageText,
       embedding,
@@ -86,6 +130,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return new Response("error", { status: 500 });
     }
 
+    // Build confirmation message
     const meta = metadata as Record<string, unknown>;
     let confirmation = `Captured as *${meta.type || "thought"}*`;
     if (Array.isArray(meta.topics) && meta.topics.length > 0)
@@ -97,6 +142,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     await replyInSlack(channel, messageTs, confirmation);
     return new Response("ok", { status: 200 });
+
   } catch (err) {
     console.error("Function error:", err);
     return new Response("error", { status: 500 });
