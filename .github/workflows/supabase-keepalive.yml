@@ -1,0 +1,27 @@
+name: supabase-keepalive
+
+# Keeps the OpenBrain Supabase project from auto-pausing.
+# Supabase free-tier projects pause after ~7 days of inactivity; this runs a
+# real DB query (thought_stats) once a day to keep it warm.
+
+on:
+  schedule:
+    - cron: '23 6 * * *'   # daily at 06:23 UTC
+  workflow_dispatch: {}      # allow manual runs from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping OpenBrain MCP (thought_stats) to keep Supabase warm
+        run: |
+          resp=$(curl -s -w '\n%{http_code}' -X POST \
+            "https://fdeeibcgwfzvbyqktnyy.supabase.co/functions/v1/open-brain-mcp?key=${{ secrets.OPENBRAIN_KEY }}" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"thought_stats","arguments":{}}}' \
+            --max-time 30)
+          code=$(printf '%s' "$resp" | tail -n1)
+          echo "HTTP $code"
+          printf '%s' "$resp" | grep -o 'Total thoughts: [0-9]*' || true
+          test "$code" = "200"
