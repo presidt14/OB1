@@ -1,0 +1,17 @@
+name = "open-brain-mcp-proxy"
+main = "src/index.js"
+compatibility_date = "2026-07-31"
+
+# The Supabase Edge Function this Worker fronts.
+# Replace YOUR_PROJECT_REF with your Supabase project ref.
+# Note: no `?key=` here — the key travels as a header, see src/index.js.
+[vars]
+UPSTREAM_URL = "https://YOUR_PROJECT_REF.supabase.co/functions/v1/open-brain-mcp"
+
+# Bind a custom domain so the Worker owns the whole origin, including the
+# /.well-known/* paths that OAuth discovery probes. Uncomment and set to a
+# hostname on a zone in your Cloudflare account.
+#
+# [[routes]]
+# pattern = "brain.example.com"
+# custom_domain = true
