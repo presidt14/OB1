@@ -96,6 +96,18 @@ Only extract what's explicitly there.`,
   }
 }
 
+/**
+ * True when a PostgREST/Postgres error means the RPC simply isn't defined in
+ * this database, as opposed to the call itself failing. PostgREST reports an
+ * unknown function as PGRST202; Postgres uses SQLSTATE 42883
+ * (undefined_function).
+ */
+function isMissingFunctionError(error: { code?: string | null; message?: string | null }): boolean {
+  const code = error?.code ?? "";
+  if (code === "PGRST202" || code === "42883") return true;
+  return /could not find the function|does not exist/i.test(error?.message ?? "");
+}
+
 // --- MCP Server Setup ---
 
 function buildServer(): McpServer {
@@ -459,29 +471,51 @@ function buildServer(): McpServer {
           extractMetadata(content),
         ]);
 
+        const thoughtMetadata = { ...metadata, source: "mcp" };
+
+        // Prefer the dedup-aware upsert_thought RPC when the database has it.
+        // It is an optional step in the setup guide (it needs the
+        // content_fingerprint column), so brains created from the base
+        // 0000_setup.sql migration alone won't have it. Fall back to a plain
+        // insert there rather than failing every capture.
         const { data: upsertResult, error: upsertError } = await supabase.rpc("upsert_thought", {
           p_content: content,
-          p_payload: { metadata: { ...metadata, source: "mcp" } },
+          p_payload: { metadata: thoughtMetadata },
         });
 
-        if (upsertError) {
+        if (upsertError && !isMissingFunctionError(upsertError)) {
           return {
             content: [{ type: "text" as const, text: `Failed to capture: ${upsertError.message}` }],
             isError: true,
           };
         }
 
-        const thoughtId = upsertResult?.id;
-        const { error: embError } = await supabase
-          .from("thoughts")
-          .update({ embedding })
-          .eq("id", thoughtId);
+        if (upsertError) {
+          const { error: insertError } = await supabase.from("thoughts").insert({
+            content,
+            embedding,
+            metadata: thoughtMetadata,
+          });
 
-        if (embError) {
-          return {
-            content: [{ type: "text" as const, text: `Failed to save embedding: ${embError.message}` }],
-            isError: true,
-          };
+          if (insertError) {
+            return {
+              content: [{ type: "text" as const, text: `Failed to capture: ${insertError.message}` }],
+              isError: true,
+            };
+          }
+        } else {
+          const thoughtId = upsertResult?.id;
+          const { error: embError } = await supabase
+            .from("thoughts")
+            .update({ embedding })
+            .eq("id", thoughtId);
+
+          if (embError) {
+            return {
+              content: [{ type: "text" as const, text: `Failed to save embedding: ${embError.message}` }],
+              isError: true,
+            };
+          }
         }
 
         const meta = metadata as Record<string, unknown>;
