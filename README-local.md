@@ -18,17 +18,20 @@ Slack message → ingest-thought (Edge Fn) → Supabase (pgvector) ← open-brai
 ## Deploy Steps
 
 ### 1. Link your Supabase project
+
 ```powershell
 cd C:\Users\TP\.gemini\antigravity\scratch\open-brain
 supabase link --project-ref YOUR_PROJECT_REF
 ```
 
 ### 2. Run the database migration
+
 ```powershell
 supabase db push
 ```
 
 ### 3. Set secrets
+
 ```powershell
 supabase secrets set `
   OPENROUTER_API_KEY=sk-or-... `
@@ -36,15 +39,18 @@ supabase secrets set `
   SLACK_CAPTURE_CHANNEL=C0XXXXXXXXX `
   MCP_ACCESS_KEY=your-random-secret-key
 ```
+
 > `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically by Supabase.
 
 ### 4. Deploy both Edge Functions
+
 ```powershell
 supabase functions deploy ingest-thought
 supabase functions deploy open-brain-mcp
 ```
 
 ### 5. Configure Slack
+
 - In your Slack app dashboard → **Event Subscriptions**
 - Enable events and set the **Request URL** to:
   `https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest-thought`
@@ -52,7 +58,9 @@ supabase functions deploy open-brain-mcp
 - Invite your bot to your capture channel
 
 ### 6. Connect an AI assistant to the MCP server
+
 Add this to your AI tool's MCP config (e.g. Claude Desktop, Cursor):
+
 ```json
 {
   "mcpServers": {
