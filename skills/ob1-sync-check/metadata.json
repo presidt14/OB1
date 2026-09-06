@@ -1,0 +1,20 @@
+{
+  "name": "OB1 Sync Check",
+  "description": "Checks whether the local OB1 checkout and fork are current with upstream, dry-runs the merge for conflicts, verifies Open Brain backend health and the Supabase keep-alive, and recommends (never auto-executes) a sync. Fork-local: paths and repo names are specific to presidt14/OB1.",
+  "category": "skills",
+  "author": {
+    "name": "Trev",
+    "github": "rightlander-trev"
+  },
+  "version": "1.0.0",
+  "requires": {
+    "open_brain": true,
+    "services": ["GitHub CLI (gh)", "git"],
+    "tools": ["thought_stats"]
+  },
+  "tags": ["skill", "git", "sync", "maintenance", "keep-alive", "fork-local"],
+  "difficulty": "beginner",
+  "estimated_time": "5 minutes",
+  "created": "2026-09-06",
+  "updated": "2026-09-06"
+}
