@@ -1,0 +1,20 @@
+{
+  "name": "Compliance Risk Digest",
+  "description": "Weekly diff-style compliance risk digest across a monitored client portfolio. Pulls snapshots, month-over-month trends, and affiliate risk rankings from a compliance-monitoring MCP, reweights by Open Brain preferences, and produces a draft-only digest with a receipt.",
+  "category": "skills",
+  "author": {
+    "name": "Trev",
+    "github": "rightlander-trev"
+  },
+  "version": "1.0.0",
+  "requires": {
+    "open_brain": true,
+    "services": ["Compliance-monitoring MCP (e.g., Rightlander) with snapshot, trend, and affiliate-ranking tools"],
+    "tools": ["search_thoughts", "capture_thought"]
+  },
+  "tags": ["skill", "compliance", "digest", "affiliates", "risk", "workflow"],
+  "difficulty": "beginner",
+  "estimated_time": "15 minutes",
+  "created": "2026-07-06",
+  "updated": "2026-07-06"
+}
