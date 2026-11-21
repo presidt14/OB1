@@ -12,6 +12,7 @@ MCP server extensions, webhook receivers, and capture sources beyond your AI too
 | [Hermes Agent Memory](hermes-agent-memory/) | Native Hermes Agent `MemoryProvider` for OB1 Agent Memory — auto-recall, auto-writeback, governance parity with the OpenClaw plugin |
 | [Slack Capture](slack-capture/) | Type thoughts in a Slack channel, automatically embedded and stored |
 | [Discord Capture](discord-capture/) | Capture thoughts from a Discord server |
+| [MCP OAuth Proxy](mcp-oauth-proxy/) | Cloudflare Worker that stops MCP connectors failing OAuth registration, and keeps your access key out of request logs |
 
 ## Contributing
 
