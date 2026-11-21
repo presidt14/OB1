@@ -10,18 +10,22 @@ Check whether Trevor's OpenBrain fork is current, and advise (don't auto-execute
 ## Steps (all read-only until Trevor approves a sync)
 
 1. **Fetch and compare** (PowerShell, in `P:\OpenBrain-linked`):
+
    ```
    git fetch origin; git fetch upstream
    git status --short                                    # local dirt / untracked
    git rev-list --left-right --count main...origin/main  # vs fork
    git rev-list --left-right --count main...upstream/main # ahead<TAB>behind
    ```
+
 2. **If behind upstream, assess the incoming changes:**
+
    ```
    git log --oneline main..upstream/main
    git diff --stat main...upstream/main
    git merge-tree --write-tree --name-only main upstream/main   # conflict dry-run
    ```
+
    Check overlap with fork-owned paths: `supabase/`, `server/index.ts`, `integrations/mcp-oauth-proxy/`, `.github/workflows/supabase-keepalive.yml`, `skills/compliance-risk-digest/`.
 3. **Backend health:** call Open Brain MCP `thought_stats` — confirm the store responds and the date range reaches ~today (keep-alive working; see keep-alive failure mode in project memory `openbrain-ops.md`).
 4. **Keep-alive workflow:** `gh run list -R presidt14/OB1 --workflow supabase-keepalive.yml -L 3` — recent successful runs expected (daily 06:23 UTC).

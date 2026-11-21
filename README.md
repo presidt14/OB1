@@ -160,6 +160,7 @@ MCP server extensions, alternative deployment targets, and capture sources beyon
 | [OpenClaw Agent Memory](integrations/openclaw-agent-memory/) | OpenClaw plugin and publishing package for using OB1 Agent Memory from OpenClaw workflows | OB1 Team |
 | [Slack Capture](integrations/slack-capture/) | Quick-capture thoughts via Slack messages with auto-embedding and classification | Core |
 | [Discord Capture](integrations/discord-capture/) | Discord bot that captures messages into Open Brain, mirroring the Slack pattern | Core |
+| [MCP OAuth Proxy](integrations/mcp-oauth-proxy/) | Cloudflare Worker that stops MCP connectors failing OAuth registration, and keeps your access key out of request logs | [@presidt14](https://github.com/presidt14) |
 
 ### [`/schemas`](schemas/) — Database Extensions
 
