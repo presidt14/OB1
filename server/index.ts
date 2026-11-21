@@ -11,6 +11,22 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
 const MCP_ACCESS_KEY = Deno.env.get("MCP_ACCESS_KEY")!;
 
+// Optional second key accepted during a rotation, so the key can be changed
+// without a hard cutover that breaks every client at once.
+//
+// To rotate:
+//   1. supabase secrets set MCP_ACCESS_KEY_PREVIOUS=<the current key>
+//   2. supabase secrets set MCP_ACCESS_KEY=<the new key>
+//   3. supabase functions deploy open-brain-mcp --no-verify-jwt
+//      (the redeploy matters — these are read once at module load, so warm
+//      workers keep the old values until they are recycled)
+//   4. Update clients at your own pace. Requests that authenticate with the
+//      previous key are logged, so the logs tell you when nothing is using it.
+//   5. supabase secrets unset MCP_ACCESS_KEY_PREVIOUS, then redeploy.
+//
+// Leave unset outside a rotation: only MCP_ACCESS_KEY is then accepted.
+const MCP_ACCESS_KEY_PREVIOUS = Deno.env.get("MCP_ACCESS_KEY_PREVIOUS") || "";
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -566,6 +582,24 @@ const JSON_RPC_UNAUTHORIZED_CODE = -32001;
 const UNAUTHORIZED_MESSAGE = "Unauthorized: missing or invalid authentication.";
 
 /**
+ * Which configured access key a presented credential matched.
+ * "previous" means the caller is still on the outgoing key mid-rotation.
+ */
+type KeyMatch = "current" | "previous" | "none";
+
+/**
+ * Compare a presented key against the current key and, when a rotation is in
+ * progress, the previous one. An absent or empty credential never matches, and
+ * an unset MCP_ACCESS_KEY_PREVIOUS is not treated as a valid empty key.
+ */
+function matchAccessKey(provided: string | null | undefined): KeyMatch {
+  if (!provided) return "none";
+  if (provided === MCP_ACCESS_KEY) return "current";
+  if (MCP_ACCESS_KEY_PREVIOUS && provided === MCP_ACCESS_KEY_PREVIOUS) return "previous";
+  return "none";
+}
+
+/**
  * Read the request body as text without consuming the original request's
  * body stream for downstream handlers. Returns null on bodyless methods
  * or read failure.
@@ -637,7 +671,18 @@ app.options("*", (c) => {
 app.all("*", async (c) => {
   // Accept access key via header OR URL query parameter
   const provided = c.req.header("x-brain-key") || new URL(c.req.url).searchParams.get("key");
-  if (!provided || provided !== MCP_ACCESS_KEY) {
+  const keyMatch = matchAccessKey(provided);
+
+  if (keyMatch === "previous") {
+    // Deliberately does not log the key itself — these logs retain request
+    // data. This line is the signal that a client is still on the outgoing
+    // key; once it stops appearing, MCP_ACCESS_KEY_PREVIOUS can be unset.
+    console.warn(
+      "[auth] request authenticated with MCP_ACCESS_KEY_PREVIOUS — a client is still using the outgoing key"
+    );
+  }
+
+  if (keyMatch === "none") {
     // Return a JSON-RPC 2.0 error envelope (HTTP 200) instead of a bare
     // HTTP 401 so strict MCP hosts treat this as an application-level
     // error rather than a transport fault and keep the connection alive.

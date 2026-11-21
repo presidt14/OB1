@@ -17,6 +17,17 @@ import { serve } from "@hono/node-server";
 // ── Minimal server mirroring the fixed pattern ────────────────────────────────
 
 const MCP_ACCESS_KEY = "test-key-xyz";
+// Mirrors a rotation in progress: the outgoing key is still accepted.
+const MCP_ACCESS_KEY_PREVIOUS = "test-key-previous";
+
+const JSON_RPC_UNAUTHORIZED_CODE = -32001;
+
+function matchAccessKey(provided) {
+  if (!provided) return "none";
+  if (provided === MCP_ACCESS_KEY) return "current";
+  if (MCP_ACCESS_KEY_PREVIOUS && provided === MCP_ACCESS_KEY_PREVIOUS) return "previous";
+  return "none";
+}
 
 function buildServer() {
   const server = new McpServer({ name: "ob1-test", version: "1.0.0" });
@@ -41,8 +52,19 @@ app.options("*", (c) => c.text("ok", 200, corsHeaders));
 
 app.all("*", async (c) => {
   const provided = c.req.header("x-brain-key");
-  if (!provided || provided !== MCP_ACCESS_KEY) {
-    return c.json({ error: "Invalid or missing access key" }, 401, corsHeaders);
+  if (matchAccessKey(provided) === "none") {
+    // Mirrors the real server: a JSON-RPC error envelope at HTTP 200, not a
+    // bare 401, so strict MCP hosts treat it as an application-level error
+    // rather than a transport fault.
+    return c.json(
+      {
+        jsonrpc: "2.0",
+        error: { code: JSON_RPC_UNAUTHORIZED_CODE, message: "Unauthorized: missing or invalid authentication." },
+        id: null,
+      },
+      200,
+      corsHeaders
+    );
   }
 
   const server = buildServer(); // per-request: fresh instance every time
@@ -120,8 +142,11 @@ console.log("\n[2] Auth rejection — wrong key");
     headers: { "Content-Type": "application/json", "x-brain-key": "wrong-key" },
     body: INIT,
   });
-  assert(r.status === 401, "wrong key → 401");
-  assert(r.headers.get("access-control-allow-origin") === "*", "CORS on 401");
+  assert(r.status === 200, "wrong key → 200 (JSON-RPC envelope, not transport fault)");
+  assert(r.headers.get("access-control-allow-origin") === "*", "CORS on auth rejection");
+  const body = await r.json();
+  assert(body?.error?.code === JSON_RPC_UNAUTHORIZED_CODE, "wrong key → JSON-RPC -32001");
+  assert(body?.result == null, "no result on auth rejection");
 }
 
 console.log("\n[3] Auth rejection — no key");
@@ -131,7 +156,36 @@ console.log("\n[3] Auth rejection — no key");
     headers: { "Content-Type": "application/json" },
     body: INIT,
   });
-  assert(r.status === 401, "missing key → 401");
+  assert(r.status === 200, "missing key → 200 (JSON-RPC envelope)");
+  const body = await r.json();
+  assert(body?.error?.code === JSON_RPC_UNAUTHORIZED_CODE, "missing key → JSON-RPC -32001");
+}
+
+console.log("\n[3b] Key rotation — previous key still accepted");
+{
+  const r = await fetch(BASE, {
+    method: "POST",
+    // Same headers as a normal authenticated call — this request passes auth
+    // and reaches the transport, which requires the SSE-capable Accept header.
+    headers: { ...authHeaders, "x-brain-key": MCP_ACCESS_KEY_PREVIOUS },
+    body: INIT,
+  });
+  assert(r.status === 200, "previous key → 200");
+  const body = await readMcpBody(r);
+  assert(body?.result?.protocolVersion != null, "previous key completes initialize");
+  assert(body?.error == null, "previous key is not rejected");
+}
+
+console.log("\n[3c] Key rotation — empty key never matches an unset previous key");
+{
+  const r = await fetch(BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-brain-key": "" },
+    body: INIT,
+  });
+  assert(r.status === 200, "empty key → 200 (JSON-RPC envelope)");
+  const body = await r.json();
+  assert(body?.error?.code === JSON_RPC_UNAUTHORIZED_CODE, "empty key → JSON-RPC -32001");
 }
 
 console.log("\n[4] MCP initialize — response shape + no mcp-session-id");
